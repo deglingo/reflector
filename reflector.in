@@ -1,0 +1,163 @@
+#!/usr/bin/python3
+
+import os, sys, logging, getopt, json, threading, codecs
+from subprocess import Popen, PIPE
+
+# USAGE
+USAGE = """\
+USAGE: reflector [OPTIONS] [DISK...]
+
+OPTIONS:
+
+  -h, --help  print this message and exit
+"""
+
+# system config
+PACKAGE = '@PACKAGE@'
+PKGSYSCONFDIR = '@pkgsysconfdir@'
+
+# PipeThread:
+class PipeThread :
+    
+    # __init__:
+    def __init__ (self, name, fin) :
+        self.name = name
+        self.fin = fin
+        self.encoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
+        self.thread = threading.Thread(target=self.run)
+        self.thread.start()
+
+    # join
+    def join (self) :
+        self.thread.join()
+
+    # run
+    def run (self) :
+        while True :
+            self.text = ''
+            data = self.fin.read(4096)
+            if not data :
+                break
+            self.text += self.encoder.decode(data, False)
+            self.process_text(False)
+        self.text += self.encoder.decode(b'', True)
+        self.process_text(True)
+        self.fin.close()
+
+    # process_text
+    def process_text (self, final) :
+        while True :
+            i = self.text.find('\n')
+            if i < 0 :
+                if final :
+                    if self.text :
+                        self.process_line(self.text)
+                    self.text = ''
+                return
+            self.process_line(self.text[:i])
+            self.text = self.text[i+1:]
+
+    # process_line
+    def process_line (self, line) :
+        trace("%s: %s" % (self.name, line.rstrip()))
+
+# CfgDisk
+class CfgDisk :
+
+    # __init__:
+    def __init__ (self, cfgfile) :
+        conf = json.load(open(cfgfile, 'rt'))
+        self.ssh_port = int(conf.pop('ssh_port', 0))
+        self.ssh_key = conf.pop('ssh_key', '')
+        self.source = conf.pop('source')
+        self.dest = conf.pop('dest')
+        self.check_file = conf.pop('check_file', '')
+        self.filters = tuple(conf.pop('filters', ()))
+        assert not conf, conf
+
+# logging
+def _log (lvl, msg) :
+    logger = logging.getLogger(PACKAGE)
+    logger.log(lvl, msg)
+    
+def trace (msg) : _log(logging.DEBUG, msg)
+def error (msg) : _log(logging.ERROR, msg)
+
+# log_setup
+def log_setup () :
+    logger = logging.getLogger(PACKAGE)
+    logger.setLevel(1)
+    # console handler
+    chdlr = logging.StreamHandler(stream=sys.stderr)
+    logger.addHandler(chdlr)
+
+# process_disk
+def process_disk (disk) :
+    cfgfile = os.path.join(PKGSYSCONFDIR, 'disks', disk + '.conf')
+    cfgdisk = CfgDisk(cfgfile)
+    if cfgdisk.check_file and not os.path.exists(cfgdisk.check_file) :
+        error("check_file does not exist: '%s'" % cfgdisk.check_file)
+        return False
+    cmd = ["/usr/bin/rsync"]
+    cmd.extend(("--archive", "--numeric-ids", "--one-file-system",
+                "--sparse", "--no-specials", "--itemize-changes",
+                "--delete", "--delete-excluded"))
+    cmd.extend(("--include-from=-",))
+    if ':' in cfgdisk.source :
+        rsh = '/usr/bin/ssh'
+        if cfgdisk.ssh_port != 0 :
+            rsh += " -p %d" % cfgdisk.ssh_port
+        if cfgdisk.ssh_key :
+            rsh += " -i %s" % cfgdisk.ssh_key
+        cmd.extend(("--rsh", rsh))
+        cmd.extend(("--rsync-path", "sudo /usr/bin/rsync",))
+        cmd.extend(("--compress", "--compress-level=9"))
+    cmd.extend((cfgdisk.source, cfgdisk.dest))
+    trace("%s> %s" % (os.getcwd(), ' '.join(cmd)))
+    proc = Popen(cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    p_out = PipeThread('rsync-out', proc.stdout)
+    p_err = PipeThread('rsync-err', proc.stderr)
+    for line in cfgdisk.filters :
+        proc.stdin.write(line.encode())
+        proc.stdin.write('\n'.encode())
+    proc.stdin.close()
+    p_out.join()
+    p_err.join()
+    r = proc.wait()
+    assert r == 0, r
+    return True
+
+# main
+def main () :
+    log_setup()
+    trace("hello!")
+    # parse the command line
+    shortopts = 'h'
+    longopts = ['help']
+    opts, args = getopt.gnu_getopt(sys.argv[1:], shortopts, longopts)
+    for o, a in opts :
+        if o in ('-h', '--help') :
+            sys.stderr.write(USAGE)
+            sys.exit(0)
+        else :
+            assert 0, (o, a)
+    # remaining args : disklist
+    disklist = args if args else list_disks()
+    # go
+    errors = []
+    for disk in args :
+        if not process_disk(disk) :
+            errors.append(disk)
+    # report
+    if errors :
+        error("%d disks failed:" % len(errors))
+        for disk in errors :
+            error(" - %s" % disk)
+        return 1
+    else :
+        trace("all done!")
+        return 0
+
+# exec
+if __name__ == '__main__' :
+    sys.exit(main())
