@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-import os, sys, logging, getopt, json, threading, codecs
+import os, sys, logging, getopt, json, threading, codecs, time
 from subprocess import Popen, PIPE
 
 # USAGE
@@ -15,6 +15,7 @@ OPTIONS:
 # system config
 PACKAGE = '@PACKAGE@'
 PKGSYSCONFDIR = '@pkgsysconfdir@'
+LOGDIR = '@pkglogdir@'
 
 # PipeThread:
 class PipeThread :
@@ -91,6 +92,21 @@ def log_setup () :
     # console handler
     chdlr = logging.StreamHandler(stream=sys.stderr)
     logger.addHandler(chdlr)
+    # logfile
+    date = time.strftime('%Y-%m-%d-%H%M%S')
+    n, sfx = 0, ''
+    while True :
+        logfile = os.path.join(LOGDIR, 'reflector.%s%s.log' % (date, sfx))
+        try:
+            f = open(logfile, 'x')
+        except FileExistsError:
+            n += 1
+            sfx = '.%d' % n
+            continue
+        f.close()
+        break
+    fhdlr = logging.FileHandler(logfile)
+    logger.addHandler(fhdlr)
 
 # process_disk
 def process_disk (disk) :
@@ -111,7 +127,7 @@ def process_disk (disk) :
         if cfgdisk.ssh_key :
             rsh += " -i %s" % cfgdisk.ssh_key
         cmd.extend(("--rsh", rsh))
-        rspath = "reflector --remote"
+        rspath = "sudo reflector --remote"
         if cfgdisk.rt_check_file :
             rspath += ' --rt-check-file %s' % cfgdisk.rt_check_file
         rspath += ' --'
@@ -183,7 +199,7 @@ def process_remote (rsync_args, check_file) :
     if check_file and not os.path.exists(check_file) :
         error("remote check file not found: '%s'" % check_file)
         return 1
-    cmd = ['sudo', '/usr/bin/rsync'] + rsync_args
+    cmd = ['/usr/bin/rsync'] + rsync_args
     trace('> %s' % ' '.join(cmd))
     proc = Popen(cmd)
     return proc.wait()
