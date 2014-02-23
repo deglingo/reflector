@@ -72,6 +72,7 @@ class CfgDisk :
         self.source = conf.pop('source')
         self.dest = conf.pop('dest')
         self.check_file = conf.pop('check_file', '')
+        self.rt_check_file = conf.pop('rt_check_file', '')
         self.filters = tuple(conf.pop('filters', ()))
         assert not conf, conf
 
@@ -110,7 +111,11 @@ def process_disk (disk) :
         if cfgdisk.ssh_key :
             rsh += " -i %s" % cfgdisk.ssh_key
         cmd.extend(("--rsh", rsh))
-        cmd.extend(("--rsync-path", "sudo /usr/bin/rsync",))
+        rspath = "reflector --remote"
+        if cfgdisk.rt_check_file :
+            rspath += ' --rt-check-file %s' % cfgdisk.rt_check_file
+        rspath += ' --'
+        cmd.extend(("--rsync-path", rspath))
         cmd.extend(("--compress", "--compress-level=9"))
     cmd.extend((cfgdisk.source, cfgdisk.dest))
     trace("%s> %s" % (os.getcwd(), ' '.join(cmd)))
@@ -131,21 +136,35 @@ def process_disk (disk) :
 def main () :
     log_setup()
     trace("hello!")
+    trace("%s" % ' '.join(sys.argv))
     # parse the command line
+    remote = False
+    rt_check_file = ''
     shortopts = 'h'
-    longopts = ['help']
+    longopts = ['help', 'remote', 'rt-check-file=']
     opts, args = getopt.gnu_getopt(sys.argv[1:], shortopts, longopts)
     for o, a in opts :
         if o in ('-h', '--help') :
             sys.stderr.write(USAGE)
             sys.exit(0)
+        elif o in ('--remote',) :
+            remote = True
+        elif o in ('--rt-check-file',) :
+            rt_check_file = a
         else :
             assert 0, (o, a)
-    # remaining args : disklist
-    disklist = args if args else list_disks()
+    # remaining args
+    if remote :
+        return process_remote(args, check_file=rt_check_file)
+    else :
+        disklist = args if args else list_disks()
+        return process_local(disklist)
+
+# process_local
+def process_local (disklist) :
     # go
     errors = []
-    for disk in args :
+    for disk in disklist :
         if not process_disk(disk) :
             errors.append(disk)
     # report
@@ -157,6 +176,16 @@ def main () :
     else :
         trace("all done!")
         return 0
+
+# process_remote:
+def process_remote (rsync_args, check_file) :
+    if check_file and not os.path.exists(check_file) :
+        error("remote check file not found: '%s'" % check_file)
+        return 1
+    cmd = ['sudo', '/usr/bin/rsync'] + rsync_args
+    trace('> %s' % ' '.join(cmd))
+    proc = Popen(cmd)
+    return proc.wait()
 
 # exec
 if __name__ == '__main__' :
