@@ -134,6 +134,7 @@ def process_disk (disk) :
 
 # main
 def main () :
+    os.nice(20)
     log_setup()
     trace("hello!")
     trace("%s" % ' '.join(sys.argv))
