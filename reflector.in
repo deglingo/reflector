@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 import os, sys, logging, getopt, json, threading, codecs, time
-import pwd, socket, re, traceback
+import pwd, socket, re, traceback, fcntl
 from subprocess import Popen, PIPE
 
 # USAGE
@@ -20,6 +20,7 @@ PKGSYSCONFDIR = '@pkgsysconfdir@' # [removeme]
 LOGDIR = '@pkglogdir@'
 PKGVARDIR = '@pkgvardir@'
 STATEDIR = os.path.join(PKGVARDIR, 'state')
+LOCKDIR = os.path.join(PKGVARDIR, 'lock')
 
 # DATE_FORMAT: format used in statefile
 DATE_FORMAT = '%Y/%m/%d %H:%M:%S'
@@ -318,19 +319,26 @@ def process_local (config, disklist, force) :
     # go
     errors = []
     for disk in disklist :
-        # read the current state
-        if check_state(disk) :
-            trace("%s: this disk needs update" % disk)
-        elif force :
-            trace("%s: sync force" % disk)
-        else :
-            trace("%s: this disk is up to date" % disk)
-            continue
-        # run
-        if process_disk(config, disk) :
-            update_state(disk, START_TIME)
-        else :
-            errors.append(disk)
+        mkdir (LOCKDIR)
+        lockfile = os.path.join(LOCKDIR, disk + '.lock')
+        lockfd = os.open(lockfile, os.O_WRONLY | os.O_CREAT)
+        try:
+            fcntl.flock(lockfd, fcntl.LOCK_EX | fcntl.LOCK_NB) 
+            # read the current state
+            if check_state(disk) :
+                trace("%s: this disk needs update" % disk)
+            elif force :
+                trace("%s: sync force" % disk)
+            else :
+                trace("%s: this disk is up to date" % disk)
+                continue
+            # run
+                if process_disk(config, disk) :
+                    update_state(disk, START_TIME)
+                else :
+                    errors.append(disk)
+        finally:
+            os.close(lockfd)
     # report
     if errors :
         error("%d disks failed:" % len(errors))
