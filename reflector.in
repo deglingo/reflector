@@ -86,17 +86,27 @@ def trace (msg) : _log(logging.DEBUG, msg)
 def error (msg) : _log(logging.ERROR, msg)
 
 # log_setup
-def log_setup () :
+def log_setup (subdir, basename, date) :
     logger = logging.getLogger(PACKAGE)
     logger.setLevel(1)
     # console handler
     chdlr = logging.StreamHandler(stream=sys.stderr)
     logger.addHandler(chdlr)
     # logfile
-    date = time.strftime('%Y-%m-%d-%H%M%S')
+    logfile = open_logfile(dirname=os.path.join(LOGDIR, subdir),
+                           basename=basename, date=date)
+    fhdlr = logging.FileHandler(logfile)
+    logger.addHandler(fhdlr)
+    trace("%s" % ' '.join(sys.argv))
+    trace("started at %s" % date)
+    trace("logfile: '%s'" % logfile)
+
+# open_logfile
+def open_logfile (dirname, basename, date) :
+    mkdir(dirname)
     n, sfx = 0, ''
     while True :
-        logfile = os.path.join(LOGDIR, 'reflector.%s%s.log' % (date, sfx))
+        logfile = os.path.join(dirname, '%s.%s%s.log' % (basename, date, sfx))
         try:
             f = open(logfile, 'x')
         except FileExistsError:
@@ -104,9 +114,15 @@ def log_setup () :
             sfx = '.%d' % n
             continue
         f.close()
-        break
-    fhdlr = logging.FileHandler(logfile)
-    logger.addHandler(fhdlr)
+        return os.path.realpath(logfile)
+
+# mkdir
+def mkdir (dirname) :
+    if os.path.isdir(dirname) :
+        return
+    mkdir(os.path.dirname(dirname))
+    try: os.mkdir(dirname)
+    except FileExistsError: pass
 
 # process_disk
 def process_disk (disk) :
@@ -151,9 +167,9 @@ def process_disk (disk) :
 # main
 def main () :
     os.nice(20)
-    log_setup()
-    trace("hello!")
-    trace("%s" % ' '.join(sys.argv))
+    # date
+    global START_DATE
+    START_DATE = time.strftime('%Y-%m-%d-%H%M%S')
     # parse the command line
     remote = False
     rt_check_file = ''
@@ -170,6 +186,10 @@ def main () :
             rt_check_file = a
         else :
             assert 0, (o, a)
+    # setup the logger
+    log_setup(subdir=('remote' if remote else 'reflector'),
+              basename=('remote' if remote else 'reflector'),
+              date=START_DATE)
     # remaining args
     if remote :
         return process_remote(args, check_file=rt_check_file)
