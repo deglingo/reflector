@@ -283,14 +283,17 @@ def real_main () :
     START_DATE = time.strftime('%Y-%m-%d-%H%M%S', START_TIME)
     # parse the command line
     remote = False
+    force = False
     rt_check_file = ''
-    shortopts = 'h'
-    longopts = ['help', 'remote', 'rt-check-file=']
+    shortopts = 'hf'
+    longopts = ['help', 'force', 'remote', 'rt-check-file=']
     opts, args = getopt.gnu_getopt(sys.argv[1:], shortopts, longopts)
     for o, a in opts :
         if o in ('-h', '--help') :
             sys.stderr.write(USAGE)
             sys.exit(0)
+        elif o in ('-f', '--force') :
+            force = True
         elif o in ('--remote',) :
             remote = True
         elif o in ('--rt-check-file',) :
@@ -308,16 +311,18 @@ def real_main () :
         cfgfile = os.path.join(SYSCONFDIR, 'reflector.conf')
         config = Config(cfgfile)
         disklist = args if args else list_disks()
-        return process_local(config, disklist)
+        return process_local(config, disklist, force=force)
 
 # process_local
-def process_local (config, disklist) :
+def process_local (config, disklist, force) :
     # go
     errors = []
     for disk in disklist :
         # read the current state
         if check_state(disk) :
             trace("%s: this disk needs update" % disk)
+        elif force :
+            trace("%s: sync force" % disk)
         else :
             trace("%s: this disk is up to date" % disk)
             continue
