@@ -17,6 +17,11 @@ OPTIONS:
 PACKAGE = '@PACKAGE@'
 PKGSYSCONFDIR = '@pkgsysconfdir@'
 LOGDIR = '@pkglogdir@'
+PKGVARDIR = '@pkgvardir@'
+STATEDIR = os.path.join(PKGVARDIR, 'state')
+
+# DATE_FORMAT: format used in statefile
+DATE_FORMAT = '%Y/%m/%d %H:%M:%S'
 
 # PipeThread:
 class PipeThread :
@@ -136,6 +141,34 @@ def cmdexec (cmd, **kwargs) :
     proc = Popen(cmd, cwd=cwd, **kwargs)
     return proc
 
+# check_delay
+def check_delay (delay, last_time, new_time) :
+    # [fixme] delay is ignored for now
+    last_stamp = time.mktime(last_time[:3] + (0, 0, 0, 0, 0, -1))
+    new_stamp = time.mktime(new_time[:3] + (0, 0, 0, 0, 0, -1))
+    return (new_stamp - last_stamp) >= 86400
+
+# check_state
+def check_state (disk) :
+    statefile = os.path.join(STATEDIR, disk + '.state')
+    try:
+        state = json.load(open(statefile, 'rt'))
+    except FileNotFoundError:
+        state = {'date': time.strftime(DATE_FORMAT, time.localtime(0))}
+    trace("%s: last sync date: %s" % (disk, state['date']))
+    return check_delay('1d', time.strptime(state['date'], DATE_FORMAT), START_TIME)
+
+# update_state
+def update_state (disk, tm) :
+    mkdir(STATEDIR)
+    statefile = os.path.join(STATEDIR, disk + '.state')
+    tmpstate = statefile + '.tmp'
+    with open(tmpstate, 'wt') as f :
+        json.dump({'date': time.strftime(DATE_FORMAT, tm)}, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.rename(tmpstate, statefile)
+
 # process_disk
 def process_disk (disk) :
     cfgfile = os.path.join(PKGSYSCONFDIR, 'disks', disk + '.conf')
@@ -184,8 +217,9 @@ def process_disk (disk) :
 def main () :
     os.nice(20)
     # date
-    global START_DATE
-    START_DATE = time.strftime('%Y-%m-%d-%H%M%S')
+    global START_TIME, START_DATE
+    START_TIME = time.localtime()
+    START_DATE = time.strftime('%Y-%m-%d-%H%M%S', START_TIME)
     # parse the command line
     remote = False
     rt_check_file = ''
@@ -218,7 +252,16 @@ def process_local (disklist) :
     # go
     errors = []
     for disk in disklist :
-        if not process_disk(disk) :
+        # read the current state
+        if check_state(disk) :
+            trace("%s: this disk needs update" % disk)
+        else :
+            trace("%s: this disk is up to date" % disk)
+            continue
+        # run
+        if process_disk(disk) :
+            update_state(disk, START_TIME)
+        else :
             errors.append(disk)
     # report
     if errors :
