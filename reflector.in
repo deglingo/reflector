@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import os, sys, logging, getopt, json, threading, codecs, time
+import pwd, socket
 from subprocess import Popen, PIPE
 
 # USAGE
@@ -124,6 +125,17 @@ def mkdir (dirname) :
     try: os.mkdir(dirname)
     except FileExistsError: pass
 
+# cmdexec
+def cmdexec (cmd, **kwargs) :
+    cwd = os.path.realpath(kwargs.pop('cwd', '.'))
+    user = pwd.getpwuid(os.getuid()).pw_name
+    host = socket.gethostname()
+    pcmd = ' '.join((("\"%s\"" % a) if ' ' in a else a)
+                    for a in cmd)
+    trace("%s@%s:%s> %s" % (user, host, cwd, pcmd))
+    proc = Popen(cmd, cwd=cwd, **kwargs)
+    return proc
+
 # process_disk
 def process_disk (disk) :
     cfgfile = os.path.join(PKGSYSCONFDIR, 'disks', disk + '.conf')
@@ -150,8 +162,7 @@ def process_disk (disk) :
         cmd.extend(("--rsync-path", rspath))
         cmd.extend(("--compress", "--compress-level=9"))
     cmd.extend((cfgdisk.source, cfgdisk.dest))
-    trace("%s> %s" % (os.getcwd(), ' '.join(cmd)))
-    proc = Popen(cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    proc = cmdexec(cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE)
     p_out = PipeThread('rsync-out', proc.stdout)
     p_err = PipeThread('rsync-err', proc.stderr)
     for line in cfgdisk.filters :
@@ -220,8 +231,7 @@ def process_remote (rsync_args, check_file) :
         error("remote check file not found: '%s'" % check_file)
         return 1
     cmd = ['/usr/bin/rsync'] + rsync_args
-    trace('> %s' % ' '.join(cmd))
-    proc = Popen(cmd)
+    proc = cmdexec(cmd)
     return proc.wait()
 
 # exec
