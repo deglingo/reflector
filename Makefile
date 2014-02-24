@@ -19,7 +19,9 @@ all: reflector
 	mv -f $@.tmp $@
 
 conf.sed: Makefile
-	(	echo "s,@PACKAGE@,$(PACKAGE),g;"; \
+	(	top_srcdir="`pwd`"; top_srcdir="`readlink -e \"$$top_srcdir\"`"; \
+		echo "s,@PACKAGE@,$(PACKAGE),g;"; \
+		echo "s,@top_srcdir@,$$top_srcdir,g;"; \
 		echo "s,@sysconfdir@,$(sysconfdir),g;"; \
 		echo "s,@pkgsysconfdir@,$(pkgsysconfdir),g;"; \
 		echo "s,@pkglogdir@,$(pkglogdir),g;"; \

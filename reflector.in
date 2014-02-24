@@ -97,12 +97,19 @@ class CfgDisk :
         self.ssh_key = conf.pop('ssh_key', '')
         assert not conf, conf
 
+# fixmodpath
+def fixmodpath (fn) :
+    if os.path.basename(fn) == 'reflector' :
+        return os.path.join('@top_srcdir@', 'reflector.in')
+    else :
+        return os.path.realpath(fn)
+
 # format_exception:
 def format_exception (exc_info=None) :
     tp, exc, tb = \
       sys.exc_info() if exc_info is None \
       else exc_info
-    lines = [('%s:%d:%s:' % (os.path.realpath(fn), ln, fc), co)
+    lines = [('%s:%d:%s:' % (fixmodpath(fn), ln, fc), co)
              for fn, ln, fc, co in traceback.extract_tb(tb)]
     cw = [max(len(l[c]) for l in lines) for c in range(2)]
     msg = '%s: %s\n' % (tp.__name__, exc)
