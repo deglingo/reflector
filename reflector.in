@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 import os, sys, logging, getopt, json, threading, codecs, time
-import pwd, socket, re
+import pwd, socket, re, traceback
 from subprocess import Popen, PIPE
 
 # USAGE
@@ -97,13 +97,39 @@ class CfgDisk :
         self.ssh_key = conf.pop('ssh_key', '')
         assert not conf, conf
 
+# format_exception:
+def format_exception (exc_info=None) :
+    tp, exc, tb = \
+      sys.exc_info() if exc_info is None \
+      else exc_info
+    lines = [('%s:%d:%s:' % (os.path.realpath(fn), ln, fc), co)
+             for fn, ln, fc, co in traceback.extract_tb(tb)]
+    cw = [max(len(l[c]) for l in lines) for c in range(2)]
+    msg = '%s: %s\n' % (tp.__name__, exc)
+    if len(msg) > 200 : msg = msg[:197] + '...'
+    sep1 = ('=' * max(len(msg) - 1, (sum(cw) + 4))) + '\n'
+    sep2 = ('-' * max(len(msg) - 1, (sum(cw) + 4))) + '\n'
+    plines = [sep1, msg, sep2]
+    plines.extend('%s%s -- %s\n' %
+                  (l[0], (' ' * (cw[0] - len(l[0]))), l[1])
+                  for l in reversed(lines))
+    plines.append(sep1)
+    return plines
+
 # logging
-def _log (lvl, msg) :
+def _log (lvl, msg, **kw) :
     logger = logging.getLogger(PACKAGE)
-    logger.log(lvl, msg)
+    logger.log(lvl, msg, **kw)
     
-def trace (msg) : _log(logging.DEBUG, msg)
-def error (msg) : _log(logging.ERROR, msg)
+def trace (msg, **kw)     : _log(logging.DEBUG, msg, **kw)
+def error (msg, **kw)     : _log(logging.ERROR, msg, **kw)
+def exception (msg, **kw) : error(msg, exc_info=sys.exc_info(), **kw)
+
+# LogFormatter:
+class LogFormatter (logging.Formatter) :
+
+    def formatException (self, exc_info) :
+        return ''.join(format_exception(exc_info))
 
 # log_setup
 def log_setup (subdir, basename, date) :
@@ -111,11 +137,13 @@ def log_setup (subdir, basename, date) :
     logger.setLevel(1)
     # console handler
     chdlr = logging.StreamHandler(stream=sys.stderr)
+    chdlr.setFormatter(LogFormatter())
     logger.addHandler(chdlr)
     # logfile
     logfile = open_logfile(dirname=os.path.join(LOGDIR, subdir),
                            basename=basename, date=date)
     fhdlr = logging.FileHandler(logfile)
+    fhdlr.setFormatter(LogFormatter())
     logger.addHandler(fhdlr)
     trace("%s" % ' '.join(sys.argv))
     trace("started at %s" % date)
@@ -228,6 +256,14 @@ def process_disk (config, disk) :
 
 # main
 def main () :
+    try:
+        real_main()
+    except:
+        exception("unhandled exception")
+        sys.exit(1)
+
+# real_main
+def real_main () :
     os.nice(20)
     # date
     global START_TIME, START_DATE
