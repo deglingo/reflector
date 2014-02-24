@@ -271,7 +271,7 @@ def rsync_cmd (config, cfgdisk) :
 def main () :
     try:
         real_main()
-    except:
+    except Exception:
         exception("unhandled exception")
         sys.exit(1)
 
@@ -285,9 +285,10 @@ def real_main () :
     # parse the command line
     remote = False
     force = False
+    all_disks = False
     rt_check_file = ''
-    shortopts = 'hf'
-    longopts = ['help', 'force', 'remote', 'rt-check-file=']
+    shortopts = 'hfa'
+    longopts = ['help', 'force', 'all', 'remote', 'rt-check-file=']
     opts, args = getopt.gnu_getopt(sys.argv[1:], shortopts, longopts)
     for o, a in opts :
         if o in ('-h', '--help') :
@@ -295,6 +296,8 @@ def real_main () :
             sys.exit(0)
         elif o in ('-f', '--force') :
             force = True
+        elif o in ('-a', '--all') :
+            all_disks = True
         elif o in ('--remote',) :
             remote = True
         elif o in ('--rt-check-file',) :
@@ -311,7 +314,17 @@ def real_main () :
     else :
         cfgfile = os.path.join(SYSCONFDIR, 'reflector.conf')
         config = Config(cfgfile)
-        disklist = args if args else list_disks()
+        if args :
+            if all_disks :
+                assert 0, args # [fixme]
+            disklist = args
+        elif all_disks :
+            # [todo] noauto flag
+            disklist = config.disks.keys()
+        else :
+            error("no disk given")
+            sys.stderr.write(USAGE)
+            sys.exit(1)
         return process_local(config, disklist, force=force)
 
 # process_local
