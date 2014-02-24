@@ -79,7 +79,8 @@ class Config :
         text = open(cfgfile, 'rt').read()
         text = rem.sub('', text)
         conf = json.loads(text)
-        self.disks = dict((n, CfgDisk(n, v))
+        self.bwlimit = conf.pop('bwlimit', '')
+        self.disks = dict((n, CfgDisk(self, n, v))
                           for n, v in conf.pop('disks').items())
         assert not conf, conf
 
@@ -87,16 +88,17 @@ class Config :
 class CfgDisk :
 
     # __init__:
-    def __init__ (self, name, conf) :
+    def __init__ (self, config, name, jconf) :
         self.name = name
-        self.source = conf.pop('source')
-        self.dest = conf.pop('dest')
-        self.filters = tuple(conf.pop('filters', ()))
-        self.check_file = conf.pop('check_file', '')
-        self.rt_check_file = conf.pop('rt_check_file', '')
-        self.ssh_port = int(conf.pop('ssh_port', 22))
-        self.ssh_key = conf.pop('ssh_key', '')
-        assert not conf, conf
+        self.source = jconf.pop('source')
+        self.dest = jconf.pop('dest')
+        self.filters = tuple(jconf.pop('filters', ()))
+        self.check_file = jconf.pop('check_file', '')
+        self.rt_check_file = jconf.pop('rt_check_file', '')
+        self.ssh_port = int(jconf.pop('ssh_port', 22))
+        self.ssh_key = jconf.pop('ssh_key', '')
+        self.bwlimit = jconf.pop('bwlimit', config.bwlimit)
+        assert not jconf, jconf
 
 # fixmodpath
 def fixmodpath (fn) :
@@ -267,6 +269,8 @@ def rsync_cmd (config, cfgdisk) :
         rspath += ' --'
         cmd.extend(("--rsync-path", rspath))
         cmd.extend(("--compress", "--compress-level=9"))
+        if cfgdisk.bwlimit :
+            cmd.extend(('--bwlimit', cfgdisk.bwlimit))
     cmd.extend((cfgdisk.source, cfgdisk.dest))
     return cmd
 
