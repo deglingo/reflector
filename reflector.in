@@ -162,16 +162,21 @@ def process_disk (disk) :
         cmd.extend(("--rsync-path", rspath))
         cmd.extend(("--compress", "--compress-level=9"))
     cmd.extend((cfgdisk.source, cfgdisk.dest))
-    proc = cmdexec(cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    p_out = PipeThread('rsync-out', proc.stdout)
+    # open a logfile
+    logfile = open_logfile(dirname=os.path.join(LOGDIR, 'rsync'),
+                           basename=disk, date=START_DATE)
+    trace("rsync logfile: '%s'" % logfile)
+    flog = open(logfile, 'wb')
+    # run
+    proc = cmdexec(cmd, stdin=PIPE, stdout=flog, stderr=PIPE)
     p_err = PipeThread('rsync-err', proc.stderr)
     for line in cfgdisk.filters :
         proc.stdin.write(line.encode())
         proc.stdin.write('\n'.encode())
     proc.stdin.close()
-    p_out.join()
     p_err.join()
     r = proc.wait()
+    flog.close()
     assert r == 0, r
     return True
 
