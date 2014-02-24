@@ -224,6 +224,27 @@ def process_disk (config, disk) :
     if cfgdisk.check_file and not os.path.exists(cfgdisk.check_file) :
         error("check_file does not exist: '%s'" % cfgdisk.check_file)
         return False
+    cmd = rsync_cmd(config, cfgdisk)
+    # open a logfile
+    logfile = open_logfile(dirname=os.path.join(LOGDIR, 'rsync'),
+                           basename=disk, date=START_DATE)
+    trace("rsync logfile: '%s'" % logfile)
+    flog = open(logfile, 'wb')
+    # run
+    proc = cmdexec(cmd, stdin=PIPE, stdout=flog, stderr=PIPE)
+    p_err = PipeThread('rsync-err', proc.stderr)
+    for line in cfgdisk.filters :
+        proc.stdin.write(line.encode())
+        proc.stdin.write('\n'.encode())
+    proc.stdin.close()
+    p_err.join()
+    r = proc.wait()
+    flog.close()
+    assert r == 0, r
+    return True
+
+# rsync_cmd
+def rsync_cmd (config, cfgdisk) :
     cmd = ["/usr/bin/rsync"]
     cmd.extend(("--archive", "--numeric-ids", "--one-file-system",
                 "--sparse", "--no-specials", "--itemize-changes",
@@ -243,23 +264,7 @@ def process_disk (config, disk) :
         cmd.extend(("--rsync-path", rspath))
         cmd.extend(("--compress", "--compress-level=9"))
     cmd.extend((cfgdisk.source, cfgdisk.dest))
-    # open a logfile
-    logfile = open_logfile(dirname=os.path.join(LOGDIR, 'rsync'),
-                           basename=disk, date=START_DATE)
-    trace("rsync logfile: '%s'" % logfile)
-    flog = open(logfile, 'wb')
-    # run
-    proc = cmdexec(cmd, stdin=PIPE, stdout=flog, stderr=PIPE)
-    p_err = PipeThread('rsync-err', proc.stderr)
-    for line in cfgdisk.filters :
-        proc.stdin.write(line.encode())
-        proc.stdin.write('\n'.encode())
-    proc.stdin.close()
-    p_err.join()
-    r = proc.wait()
-    flog.close()
-    assert r == 0, r
-    return True
+    return cmd
 
 # main
 def main () :
