@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 import os, sys, logging, getopt, json, threading, codecs, time
-import pwd, socket
+import pwd, socket, re
 from subprocess import Popen, PIPE
 
 # USAGE
@@ -15,7 +15,8 @@ OPTIONS:
 
 # system config
 PACKAGE = '@PACKAGE@'
-PKGSYSCONFDIR = '@pkgsysconfdir@'
+SYSCONFDIR = '@sysconfdir@'
+PKGSYSCONFDIR = '@pkgsysconfdir@' # [removeme]
 LOGDIR = '@pkglogdir@'
 PKGVARDIR = '@pkgvardir@'
 STATEDIR = os.path.join(PKGVARDIR, 'state')
@@ -68,19 +69,32 @@ class PipeThread :
     def process_line (self, line) :
         trace("%s: %s" % (self.name, line.rstrip()))
 
+# Config
+class Config :
+
+    # __init__:
+    def __init__ (self, cfgfile) :
+        rem = re.compile(r"^\s*#.*$", re.MULTILINE)
+        text = open(cfgfile, 'rt').read()
+        text = rem.sub('', text)
+        conf = json.loads(text)
+        self.disks = dict((n, CfgDisk(n, v))
+                          for n, v in conf.pop('disks').items())
+        assert not conf, conf
+
 # CfgDisk
 class CfgDisk :
 
     # __init__:
-    def __init__ (self, cfgfile) :
-        conf = json.load(open(cfgfile, 'rt'))
-        self.ssh_port = int(conf.pop('ssh_port', 0))
-        self.ssh_key = conf.pop('ssh_key', '')
+    def __init__ (self, name, conf) :
+        self.name = name
         self.source = conf.pop('source')
         self.dest = conf.pop('dest')
+        self.filters = tuple(conf.pop('filters', ()))
         self.check_file = conf.pop('check_file', '')
         self.rt_check_file = conf.pop('rt_check_file', '')
-        self.filters = tuple(conf.pop('filters', ()))
+        self.ssh_port = int(conf.pop('ssh_port', 22))
+        self.ssh_key = conf.pop('ssh_key', '')
         assert not conf, conf
 
 # logging
@@ -170,9 +184,8 @@ def update_state (disk, tm) :
     os.rename(tmpstate, statefile)
 
 # process_disk
-def process_disk (disk) :
-    cfgfile = os.path.join(PKGSYSCONFDIR, 'disks', disk + '.conf')
-    cfgdisk = CfgDisk(cfgfile)
+def process_disk (config, disk) :
+    cfgdisk = config.disks[disk]
     if cfgdisk.check_file and not os.path.exists(cfgdisk.check_file) :
         error("check_file does not exist: '%s'" % cfgdisk.check_file)
         return False
@@ -244,11 +257,13 @@ def main () :
     if remote :
         return process_remote(args, check_file=rt_check_file)
     else :
+        cfgfile = os.path.join(SYSCONFDIR, 'reflector.conf')
+        config = Config(cfgfile)
         disklist = args if args else list_disks()
-        return process_local(disklist)
+        return process_local(config, disklist)
 
 # process_local
-def process_local (disklist) :
+def process_local (config, disklist) :
     # go
     errors = []
     for disk in disklist :
@@ -259,7 +274,7 @@ def process_local (disklist) :
             trace("%s: this disk is up to date" % disk)
             continue
         # run
-        if process_disk(disk) :
+        if process_disk(config, disk) :
             update_state(disk, START_TIME)
         else :
             errors.append(disk)

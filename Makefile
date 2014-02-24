@@ -20,6 +20,7 @@ all: reflector
 
 conf.sed: Makefile
 	(	echo "s,@PACKAGE@,$(PACKAGE),g;"; \
+		echo "s,@sysconfdir@,$(sysconfdir),g;"; \
 		echo "s,@pkgsysconfdir@,$(pkgsysconfdir),g;"; \
 		echo "s,@pkglogdir@,$(pkglogdir),g;"; \
 		echo "s,@pkgvardir@,$(pkgvardir),g;"; \
