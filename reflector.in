@@ -241,8 +241,11 @@ def process_disk (config, disk) :
     p_err.join()
     r = proc.wait()
     flog.close()
-    assert r == 0, r
-    return True
+    if r == 0 :
+        return True
+    else :
+        error("rsync failed (%s)" % r)
+        return False
 
 # rsync_cmd
 def rsync_cmd (config, cfgdisk) :
@@ -270,10 +273,10 @@ def rsync_cmd (config, cfgdisk) :
 # main
 def main () :
     try:
-        real_main()
+        return real_main()
     except Exception:
         exception("unhandled exception")
-        sys.exit(1)
+        return 1
 
 # real_main
 def real_main () :
