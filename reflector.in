@@ -254,7 +254,11 @@ def rsync_cmd (config, cfgdisk) :
     cmd = ["/usr/bin/rsync"]
     cmd.extend(("--archive", "--numeric-ids", "--one-file-system",
                 "--sparse", "--no-specials", "--itemize-changes",
-                "--delete", "--delete-excluded"))
+                "--delete", "--delete-excluded",
+                "--stats", "--human-readable"))
+    # [fixme] the --delay-updates option looks great but i'm not sure
+    # to clearly understand here
+    cmd.extend(("--partial", "--partial-dir=.rsync-partial"))
     cmd.extend(("--include-from=-",))
     if ':' in cfgdisk.source :
         rsh = '/usr/bin/ssh'
