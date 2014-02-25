@@ -30,6 +30,7 @@ class PipeThread :
     
     # __init__:
     def __init__ (self, name, fin) :
+        self.bufsize = 512
         self.name = name
         self.fin = fin
         self.encoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
@@ -44,7 +45,7 @@ class PipeThread :
     def run (self) :
         while True :
             self.text = ''
-            data = self.fin.read(4096)
+            data = self.fin.read(self.bufsize)
             if not data :
                 break
             self.text += self.encoder.decode(data, False)
